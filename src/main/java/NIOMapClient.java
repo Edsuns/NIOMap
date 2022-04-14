@@ -1,21 +1,15 @@
-import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.SocketChannel;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
 /**
  * Created by Edsuns@qq.com on 2022/4/12.
  */
-public class NIOMapClient extends NIOComponent {
+public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
 
-    private static class Command {
+    static class Command {
 
         final String message;
         boolean returned = false;
@@ -66,40 +60,30 @@ public class NIOMapClient extends NIOComponent {
     private final ByteBuffer buffer = ByteBuffer.allocate(2048);
 
     protected NIOMapClient(SocketAddress address) {
-        super(address, false);
-    }
-
-    private Queue<Command> attach(SelectionKey key) {
-        Queue<Command> attachment = (Queue<Command>) key.attachment();
-        if (attachment == null) {
-            attachment = new LinkedList<>();
-            key.attach(attachment);
-        }
-        return attachment;
+        super(address, false, LinkedList::new);
     }
 
     @Override
-    protected ByteBuffer getBuffer(SelectionKey key) {
+    protected ByteBuffer getBuffer(Queue<Command> attachment) {
         return buffer;
     }
 
     @Override
-    protected void onMessage(SelectionKey sender, String message) {
-        Queue<Command> attachment = attach(sender);
+    protected void onMessage(Queue<Command> attachment, String message) {
         Command command = Objects.requireNonNull(attachment.poll());
         command.onReturn(message);
     }
 
     @Override
-    protected void onWritable(SelectionKey key) throws IOException {
-        Queue<Command> attachment = attach(key);
-        SocketChannel channel = (SocketChannel) key.channel();
+    protected List<String> onWritable(Queue<Command> attachment) {
+        List<String> messages = new LinkedList<>();
         Command command;
         while ((command = commandQueue.poll()) != null) {
-            writeMessage(channel, command.message);
+            messages.add(command.message);
             attachment.add(command);
             lastCommandUpdater.set(this, command);
         }
+        return messages;
     }
 
     public void awaitFlush(long timeout, TimeUnit unit)

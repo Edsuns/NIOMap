@@ -1,17 +1,11 @@
-import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.SocketChannel;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Queue;
+import java.util.*;
 
 /**
  * Created by Edsuns@qq.com on 2022/4/12.
  */
-public class NIOMapServer extends NIOComponent {
+public class NIOMapServer extends NIOComponent<NIOMapServer.ServerAttachment> {
 
     static class ServerAttachment {
         final Queue<String> queue = new LinkedList<>();
@@ -25,26 +19,17 @@ public class NIOMapServer extends NIOComponent {
     }
 
     protected NIOMapServer(SocketAddress address, Map<String, String> map) {
-        super(address, true);
+        super(address, true, ServerAttachment::new);
         this.map = map;
     }
 
-    private ServerAttachment attach(SelectionKey key) {
-        ServerAttachment attachment = (ServerAttachment) key.attachment();
-        if (attachment == null) {
-            attachment = new ServerAttachment();
-            key.attach(attachment);
-        }
-        return attachment;
+    @Override
+    protected ByteBuffer getBuffer(ServerAttachment attachment) {
+        return attachment.buffer;
     }
 
     @Override
-    protected ByteBuffer getBuffer(SelectionKey key) {
-        return attach(key).buffer;
-    }
-
-    @Override
-    protected void onMessage(SelectionKey sender, String message) {
+    protected void onMessage(ServerAttachment attachment, String message) {
         String returnVal;
         String[] cmd = message.split(" ");
         if ("put".equals(cmd[0])) {
@@ -59,17 +44,16 @@ public class NIOMapServer extends NIOComponent {
             throw new UnsupportedOperationException(message);
         }
 
-        Queue<String> attachment = attach(sender).queue;
-        attachment.add(returnVal != null ? returnVal : "null");
+        attachment.queue.add(returnVal != null ? returnVal : "null");
     }
 
     @Override
-    protected void onWritable(SelectionKey key) throws IOException {
-        Queue<String> attachment = attach(key).queue;
-        SocketChannel channel = (SocketChannel) key.channel();
+    protected List<String> onWritable(ServerAttachment attachment) {
+        List<String> messages = new ArrayList<>(attachment.queue.size());
         String returnVal;
-        while ((returnVal = attachment.poll()) != null) {
-            writeMessage(channel, returnVal);
+        while ((returnVal = attachment.queue.poll()) != null) {
+            messages.add(returnVal);
         }
+        return messages;
     }
 }

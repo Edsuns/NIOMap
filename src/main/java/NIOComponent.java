@@ -8,11 +8,13 @@ import java.nio.channels.spi.AbstractSelector;
 import java.nio.channels.spi.SelectorProvider;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
+import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * Created by Edsuns@qq.com on 2022/4/12.
  */
-public abstract class NIOComponent implements Closeable {
+public abstract class NIOComponent<AT> implements Closeable {
 
     static final char MESSAGE_DELIMITER = '\n';
     /**
@@ -22,13 +24,15 @@ public abstract class NIOComponent implements Closeable {
 
     protected final boolean isServer;
     protected final SocketAddress address;
+    protected final Supplier<AT> attachmentSupplier;
 
     volatile Selector selector;
     Thread thread;
 
-    protected NIOComponent(SocketAddress address, boolean isServer) {
+    protected NIOComponent(SocketAddress address, boolean isServer, Supplier<AT> attachmentSupplier) {
         this.isServer = isServer;
         this.address = address;
+        this.attachmentSupplier = attachmentSupplier;
     }
 
     private AbstractSelectableChannel channel() throws IOException {
@@ -49,6 +53,15 @@ public abstract class NIOComponent implements Closeable {
         AbstractSelector selector = SelectorProvider.provider().openSelector();
         channel.register(selector, isServer ? SelectionKey.OP_ACCEPT : SelectionKey.OP_CONNECT);
         return selector;
+    }
+
+    private AT attach(SelectionKey key) {
+        AT attachment = (AT) key.attachment();
+        if (attachment == null) {
+            attachment = attachmentSupplier.get();
+            key.attach(attachment);
+        }
+        return attachment;
     }
 
     public synchronized void connect() throws IOException {
@@ -97,7 +110,12 @@ public abstract class NIOComponent implements Closeable {
                     } else if (key.isReadable()) {
                         onReadable(key);
                     } else if (key.isWritable()) {
-                        onWritable(key);
+                        SocketChannel channel = (SocketChannel) key.channel();
+                        AT attachment = attach(key);
+                        List<String> messages = onWritable(attachment);
+                        for (String msg : messages) {
+                            writeMessage(channel, msg);
+                        }
                     }
                 }
             }
@@ -130,7 +148,8 @@ public abstract class NIOComponent implements Closeable {
 
     protected void onReadable(SelectionKey key) throws IOException {
         SocketChannel channel = (SocketChannel) key.channel();
-        ByteBuffer buffer = getBuffer(key);
+        AT attachment = attach(key);
+        ByteBuffer buffer = getBuffer(attachment);
         if (channel.read(buffer) <= 0) {
             return;
         }
@@ -144,7 +163,7 @@ public abstract class NIOComponent implements Closeable {
                 }
                 byte[] msg = new byte[len];
                 System.arraycopy(bf, idx + 1, msg, 0, len);
-                onMessage(key, unescape(new String(msg, StandardCharsets.UTF_8)));
+                onMessage(attachment, unescape(new String(msg, StandardCharsets.UTF_8)));
                 idx = i;
             }
         }
@@ -201,9 +220,9 @@ public abstract class NIOComponent implements Closeable {
         return builder.toString();
     }
 
-    protected abstract ByteBuffer getBuffer(SelectionKey key);
+    protected abstract ByteBuffer getBuffer(AT attachment);
 
-    protected abstract void onMessage(SelectionKey sender, String message);
+    protected abstract void onMessage(AT attachment, String message);
 
-    protected abstract void onWritable(SelectionKey key) throws IOException;
+    protected abstract List<String> onWritable(AT attachment);
 }
