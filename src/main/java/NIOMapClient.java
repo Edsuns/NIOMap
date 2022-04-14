@@ -59,8 +59,8 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
 
     private final ByteBuffer buffer = ByteBuffer.allocate(2048);
 
-    protected NIOMapClient(SocketAddress address) {
-        super(address, false, LinkedList::new);
+    protected NIOMapClient(SocketAddress address, AESEncoder encoder) {
+        super(address, false, encoder, LinkedList::new);
     }
 
     @Override

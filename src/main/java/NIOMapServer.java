@@ -14,12 +14,12 @@ public class NIOMapServer extends NIOComponent<NIOMapServer.ServerAttachment> {
 
     final Map<String, String> map;
 
-    protected NIOMapServer(SocketAddress address) {
-        this(address, new HashMap<>());
+    protected NIOMapServer(SocketAddress address, AESEncoder encoder) {
+        this(address, encoder, new HashMap<>());
     }
 
-    protected NIOMapServer(SocketAddress address, Map<String, String> map) {
-        super(address, true, ServerAttachment::new);
+    protected NIOMapServer(SocketAddress address, AESEncoder encoder, Map<String, String> map) {
+        super(address, true, encoder, ServerAttachment::new);
         this.map = map;
     }
 

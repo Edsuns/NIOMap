@@ -2,6 +2,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
@@ -16,10 +17,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 public class NIOMapTest {
 
     @Test
-    public void basic() throws IOException, ExecutionException, InterruptedException {
+    public void basic() throws IOException, ExecutionException, InterruptedException, NoSuchAlgorithmException {
+        AESEncoder encoder = AESEncoder.generateEncoder();
         InetSocketAddress address = new InetSocketAddress(6632);
-        NIOMapServer nioMapServer = new NIOMapServer(address);
-        NIOMapClient nioMapClient = new NIOMapClient(address);
+        NIOMapServer nioMapServer = new NIOMapServer(address, encoder);
+        NIOMapClient nioMapClient = new NIOMapClient(address, encoder);
         nioMapServer.connect();
         nioMapClient.connect();
 
@@ -42,18 +44,20 @@ public class NIOMapTest {
     }
 
     @Test
-    public void concurrent() throws IOException, InterruptedException, TimeoutException, ExecutionException {
+    public void concurrent() throws IOException, InterruptedException,
+            TimeoutException, ExecutionException, NoSuchAlgorithmException {
+        AESEncoder encoder = AESEncoder.generateEncoder();
         InetSocketAddress address = new InetSocketAddress(6633);
-        NIOMapServer nioMapServer = new NIOMapServer(address);
+        NIOMapServer nioMapServer = new NIOMapServer(address, encoder);
         nioMapServer.connect();
 
-        final int x = 3, y = 5, threads = x * y;
+        final int x = 3, y = 4, threads = x * y;
         ExecutorService executorService = Executors.newFixedThreadPool(threads);
 
         List<NIOMapClient> clients = new ArrayList<>(x);
         List<Future<Void>> futures = new LinkedList<>();
         for (int i = 0; i < x; i++) {
-            NIOMapClient nioMapClient = new NIOMapClient(address);
+            NIOMapClient nioMapClient = new NIOMapClient(address, encoder);
             nioMapClient.connect();
             clients.add(nioMapClient);
         }
@@ -72,8 +76,8 @@ public class NIOMapTest {
             for (NIOMapClient client : clients) {
                 client.awaitFlush(10_000L, TimeUnit.MILLISECONDS);
             }
-            System.out.println("total 45w queries: " + (System.currentTimeMillis() - start) + "ms");
-            assertEquals(x * 10000, nioMapServer.map.size());
+            System.out.println((180_000d / ((System.currentTimeMillis() - start) / 1000d)) + " QPS");
+            assertEquals(x * 5000, nioMapServer.map.size());
         } catch (ExecutionException e) {
             if (e.getCause() instanceof AssertionError) {
                 throw (AssertionError) e.getCause();
