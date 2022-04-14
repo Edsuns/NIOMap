@@ -3,7 +3,6 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedList;
 import java.util.Map;
 import java.util.Objects;
@@ -85,10 +84,10 @@ public class NIOMapClient extends NIOComponent {
     }
 
     @Override
-    protected void onMessage(SelectionKey sender, byte[] message) {
+    protected void onMessage(SelectionKey sender, String message) {
         Queue<Command> attachment = attach(sender);
         Command command = Objects.requireNonNull(attachment.poll());
-        command.onReturn(new String(message, StandardCharsets.UTF_8));
+        command.onReturn(message);
     }
 
     @Override
@@ -97,11 +96,7 @@ public class NIOMapClient extends NIOComponent {
         SocketChannel channel = (SocketChannel) key.channel();
         Command command;
         while ((command = commandQueue.poll()) != null) {
-            String msg = command.message + MESSAGE_DELIMITER;
-            ByteBuffer bf = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
-            while (bf.hasRemaining()) {
-                channel.write(bf);
-            }
+            writeMessage(channel, command.message);
             attachment.add(command);
             lastCommandUpdater.set(this, command);
         }

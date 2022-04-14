@@ -6,6 +6,7 @@ import java.nio.channels.*;
 import java.nio.channels.spi.AbstractSelectableChannel;
 import java.nio.channels.spi.AbstractSelector;
 import java.nio.channels.spi.SelectorProvider;
+import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
 /**
@@ -143,7 +144,7 @@ public abstract class NIOComponent implements Closeable {
                 }
                 byte[] msg = new byte[len];
                 System.arraycopy(bf, idx + 1, msg, 0, len);
-                onMessage(key, msg);
+                onMessage(key, unescape(new String(msg, StandardCharsets.UTF_8)));
                 idx = i;
             }
         }
@@ -154,9 +155,55 @@ public abstract class NIOComponent implements Closeable {
         }
     }
 
+    protected void writeMessage(SocketChannel channel, String message) throws IOException {
+        String msg = escape(message) + MESSAGE_DELIMITER;
+        ByteBuffer bf = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
+        while (bf.hasRemaining()) {
+            channel.write(bf);
+        }
+    }
+
+    static String escape(String src) {
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < src.length(); i++) {
+            char c = src.charAt(i);
+            if (c == '\\') {
+                builder.append("\\\\");
+            } else if (c == '\n') {
+                builder.append("\\n");
+            } else {
+                builder.append(c);
+            }
+        }
+        return builder.toString();
+    }
+
+    static String unescape(String src) {
+        int slash = 0;
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < src.length(); i++) {
+            char c = src.charAt(i);
+            if (c == '\\') {
+                slash++;
+                if (slash == 2) {
+                    builder.append('\\');
+                    slash = 0;
+                }
+                continue;
+            }
+            if (c == 'n' && slash == 1) {
+                builder.append('\n');
+                slash = 0;
+                continue;
+            }
+            builder.append(c);
+        }
+        return builder.toString();
+    }
+
     protected abstract ByteBuffer getBuffer(SelectionKey key);
 
-    protected abstract void onMessage(SelectionKey sender, byte[] message);
+    protected abstract void onMessage(SelectionKey sender, String message);
 
     protected abstract void onWritable(SelectionKey key) throws IOException;
 }

@@ -33,6 +33,10 @@ public class NIOMapTest {
         assertEquals(v1_1, nioMapClient.remove(k1).get());
         assertEquals("0", nioMapClient.size().get());
 
+        String s = "abc\\mn\\\\\\n\ndef\\\n";
+        assertNull(nioMapClient.put(s, s).get());
+        assertEquals(s, nioMapClient.get(s).get());
+
         nioMapClient.close();
         nioMapServer.close();
     }

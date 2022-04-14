@@ -3,7 +3,6 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Map;
@@ -45,9 +44,9 @@ public class NIOMapServer extends NIOComponent {
     }
 
     @Override
-    protected void onMessage(SelectionKey sender, byte[] message) {
-        String msg = new String(message, StandardCharsets.UTF_8), returnVal;
-        String[] cmd = msg.split(" ");
+    protected void onMessage(SelectionKey sender, String message) {
+        String returnVal;
+        String[] cmd = message.split(" ");
         if ("put".equals(cmd[0])) {
             returnVal = map.put(cmd[1], cmd[2]);
         } else if ("get".equals(cmd[0])) {
@@ -57,7 +56,7 @@ public class NIOMapServer extends NIOComponent {
         } else if ("size".equals(cmd[0])) {
             returnVal = String.valueOf(map.size());
         } else {
-            throw new UnsupportedOperationException(msg);
+            throw new UnsupportedOperationException(message);
         }
 
         Queue<String> attachment = attach(sender).queue;
@@ -70,11 +69,7 @@ public class NIOMapServer extends NIOComponent {
         SocketChannel channel = (SocketChannel) key.channel();
         String returnVal;
         while ((returnVal = attachment.poll()) != null) {
-            String msg = returnVal + MESSAGE_DELIMITER;
-            ByteBuffer bf = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
-            while (bf.hasRemaining()) {
-                channel.write(bf);
-            }
+            writeMessage(channel, returnVal);
         }
     }
 }
