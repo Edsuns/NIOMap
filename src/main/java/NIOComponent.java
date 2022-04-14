@@ -7,6 +7,7 @@ import java.nio.channels.spi.AbstractSelectableChannel;
 import java.nio.channels.spi.AbstractSelector;
 import java.nio.channels.spi.SelectorProvider;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.function.Supplier;
@@ -16,7 +17,7 @@ import java.util.function.Supplier;
  */
 public abstract class NIOComponent<AT> implements Closeable {
 
-    static final char MESSAGE_DELIMITER = '\n';
+    static final byte MESSAGE_DELIMITER = '\n';
     /**
      * {@link SelectionKey}
      */
@@ -163,7 +164,7 @@ public abstract class NIOComponent<AT> implements Closeable {
                 }
                 byte[] msg = new byte[len];
                 System.arraycopy(bf, idx + 1, msg, 0, len);
-                onMessage(attachment, unescape(new String(msg, StandardCharsets.UTF_8)));
+                onMessage(attachment, new String(unescape(msg), StandardCharsets.UTF_8));
                 idx = i;
             }
         }
@@ -175,49 +176,62 @@ public abstract class NIOComponent<AT> implements Closeable {
     }
 
     protected void writeMessage(SocketChannel channel, String message) throws IOException {
-        String msg = escape(message) + MESSAGE_DELIMITER;
-        ByteBuffer bf = ByteBuffer.wrap(msg.getBytes(StandardCharsets.UTF_8));
+        byte[] bytes = escape(message.getBytes(StandardCharsets.UTF_8));
+        byte[] msg = new byte[bytes.length + 1];
+        System.arraycopy(bytes, 0, msg, 0, bytes.length);
+        msg[msg.length - 1] = MESSAGE_DELIMITER;
+        ByteBuffer bf = ByteBuffer.wrap(msg);
         while (bf.hasRemaining()) {
             channel.write(bf);
         }
     }
 
-    static String escape(String src) {
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < src.length(); i++) {
-            char c = src.charAt(i);
-            if (c == '\\') {
-                builder.append("\\\\");
-            } else if (c == '\n') {
-                builder.append("\\n");
-            } else {
-                builder.append(c);
+    static byte[] escape(byte[] src) {
+        int c = 0;
+        for (byte b : src) {
+            if (b == '\\' || b == MESSAGE_DELIMITER) {
+                c++;
             }
         }
-        return builder.toString();
+        if (c == 0) {
+            return src;
+        }
+        byte[] result = new byte[src.length + c];
+        int p = 0;
+        for (byte b : src) {
+            if (b == '\\') {
+                result[p++] = '\\';
+                result[p++] = '\\';
+            } else if (b == MESSAGE_DELIMITER) {
+                result[p++] = '\\';
+                result[p++] = 'n';
+            } else {
+                result[p++] = b;
+            }
+        }
+        return result;
     }
 
-    static String unescape(String src) {
-        int slash = 0;
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < src.length(); i++) {
-            char c = src.charAt(i);
-            if (c == '\\') {
+    static byte[] unescape(byte[] src) {
+        byte[] bf = new byte[src.length];
+        int p = 0, slash = 0;
+        for (byte b : src) {
+            if (b == '\\') {
                 slash++;
                 if (slash == 2) {
-                    builder.append('\\');
+                    bf[p++] = '\\';
                     slash = 0;
                 }
                 continue;
             }
-            if (c == 'n' && slash == 1) {
-                builder.append('\n');
+            if (b == 'n' && slash == 1) {
+                bf[p++] = MESSAGE_DELIMITER;
                 slash = 0;
                 continue;
             }
-            builder.append(c);
+            bf[p++] = b;
         }
-        return builder.toString();
+        return Arrays.copyOf(bf, p);
     }
 
     protected abstract ByteBuffer getBuffer(AT attachment);
