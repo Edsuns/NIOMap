@@ -117,12 +117,16 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
         if (MessageOutput.encode.getAndSet(0L) > 0) {
             System.out.println("total encode: " + MessageOutput.encode + "ms");
+            System.out.println("----------------------");
         }
         String name = isServer ? "server" : "client";
         System.out.println(name + " select: " + select + "ms");
+        System.out.println(name + " read: " + read + "ms");
+        System.out.println(name + " write: " + write + "ms");
+        System.out.println("----------------------");
     }
 
-    long select = 0L;
+    long select = 0L, read = 0L, write = 0L;
 
     private void handleEvents() {
         Selector s;
@@ -155,7 +159,10 @@ public abstract class NIOComponent<AT> implements Closeable {
                             handleConnectionOnReadable(context);
                             continue;
                         }
+
+                        start = System.currentTimeMillis();
                         onReadable(context);
+                        read += (System.currentTimeMillis() - start);
                     }
                     if (key.isWritable()) {
                         ChannelContext<AT> context = context(key);
@@ -163,7 +170,10 @@ public abstract class NIOComponent<AT> implements Closeable {
                             handleConnectionOnWritable(context);
                             continue;
                         }
+
+                        start = System.currentTimeMillis();
                         onWritable(context);
+                        write += (System.currentTimeMillis() - start);
                     }
                 }
             } catch (ClosedSelectorException | CancelledKeyException e) {

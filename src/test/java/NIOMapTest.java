@@ -83,6 +83,7 @@ public class NIOMapTest {
                 client.awaitFlush(10_000L, TimeUnit.MILLISECONDS);
             }
             System.out.println("flush: " + calcQPS.apply(start));
+            System.out.println("total: " + (System.currentTimeMillis() - start) + "ms");
             assertEquals(x * 5000, nioMapServer.map.size());
         } catch (ExecutionException e) {
             if (e.getCause() instanceof AssertionError) {
