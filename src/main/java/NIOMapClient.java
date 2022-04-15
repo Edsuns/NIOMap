@@ -119,4 +119,11 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
     public Future<String> size() {
         return enqueueCommand("size");
     }
+
+    /**
+     * @see Map#clear()
+     */
+    public Future<String> clear() {
+        return enqueueCommand("clear");
+    }
 }
