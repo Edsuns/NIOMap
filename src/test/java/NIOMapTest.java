@@ -4,10 +4,12 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.security.NoSuchAlgorithmException;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -20,7 +22,7 @@ public class NIOMapTest {
     @Test
     public void basic() throws IOException, ExecutionException, InterruptedException, NoSuchAlgorithmException {
         AESEncoder encoder = AESEncoder.generateEncoder();
-        InetSocketAddress address = new InetSocketAddress(6632);
+        InetSocketAddress address = new InetSocketAddress(6636);
         NIOMapServer nioMapServer = new NIOMapServer(address, encoder);
         NIOMapClient nioMapClient = new NIOMapClient(address, encoder);
         nioMapServer.connect();
@@ -48,7 +50,7 @@ public class NIOMapTest {
     public void concurrent() throws IOException, InterruptedException,
             TimeoutException, ExecutionException, NoSuchAlgorithmException {
         AESEncoder encoder = AESEncoder.generateEncoder();
-        InetSocketAddress address = new InetSocketAddress(6633);
+        InetSocketAddress address = new InetSocketAddress(6639);
         NIOMapServer nioMapServer = new NIOMapServer(address, encoder);
         nioMapServer.connect();
 
@@ -68,16 +70,19 @@ public class NIOMapTest {
             }
         }
 
+        DecimalFormat df = new DecimalFormat(",###0.0000");
+        Function<Long, String> calcQPS = start ->
+                df.format(180_000d / ((System.currentTimeMillis() - start) / 1000d)) + " QPS";
         try {
             long start = System.currentTimeMillis();
             for (Future<Void> future : futures) {
                 future.get(10_000L, TimeUnit.MILLISECONDS);
             }
-            System.out.println("enqueue: " + (System.currentTimeMillis() - start) + "ms");
+            System.out.println("enqueue: " + calcQPS.apply(start));
             for (NIOMapClient client : clients) {
                 client.awaitFlush(10_000L, TimeUnit.MILLISECONDS);
             }
-            System.out.println((180_000d / ((System.currentTimeMillis() - start) / 1000d)) + " QPS");
+            System.out.println("flush: " + calcQPS.apply(start));
             assertEquals(x * 5000, nioMapServer.map.size());
         } catch (ExecutionException e) {
             if (e.getCause() instanceof AssertionError) {
