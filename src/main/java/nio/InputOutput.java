@@ -1,7 +1,5 @@
 package nio;
 
-import java.util.Arrays;
-
 /**
  * Created by Edsuns@qq.com on 2022/4/15.
  */
@@ -56,7 +54,7 @@ interface InputOutput {
             }
             bf[p++] = b;
         }
-        return Arrays.copyOf(bf, p);
+        return copyOf(bf, 0, p);
     }
 
     static byte[] copyOf(byte[] src, int srcPos, int newLength) {
