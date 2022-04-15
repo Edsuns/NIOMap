@@ -1,5 +1,9 @@
+import java.io.IOException;
 import java.net.SocketAddress;
-import java.util.*;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Queue;
 
 /**
  * Created by Edsuns@qq.com on 2022/4/12.
@@ -18,7 +22,7 @@ public class NIOMapServer extends NIOComponent<Queue<String>> {
     }
 
     @Override
-    protected void onMessage(Queue<String> attachment, String message) {
+    protected void onMessage(ChannelContext<Queue<String>> context, String message) {
         String returnVal;
         String[] cmd = message.split(" ");
         if ("put".equals(cmd[0])) {
@@ -33,16 +37,14 @@ public class NIOMapServer extends NIOComponent<Queue<String>> {
             throw new UnsupportedOperationException(message);
         }
 
-        attachment.add(returnVal != null ? returnVal : "null");
+        context.attachment.add(returnVal != null ? returnVal : "null");
     }
 
     @Override
-    protected List<String> onWritable(Queue<String> attachment) {
-        List<String> messages = new ArrayList<>(attachment.size());
+    protected void onWritable(ChannelContext<Queue<String>> context) throws IOException {
         String returnVal;
-        while ((returnVal = attachment.poll()) != null) {
-            messages.add(returnVal);
+        while ((returnVal = context.attachment.poll()) != null) {
+            write(context, returnVal);
         }
-        return messages;
     }
 }

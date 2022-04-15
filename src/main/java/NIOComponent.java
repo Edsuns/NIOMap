@@ -12,7 +12,10 @@ import java.nio.channels.spi.SelectorProvider;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.Queue;
 import java.util.function.Supplier;
 
 /**
@@ -20,7 +23,8 @@ import java.util.function.Supplier;
  */
 public abstract class NIOComponent<AT> implements Closeable {
 
-    protected static class AttachmentWrapper<T> {
+    protected static class ChannelContext<T> {
+        protected final SocketChannel channel;
         protected final T attachment;
         final ByteBuffer inputBuffer = ByteBuffer.allocate(4096);
         final Queue<ByteBuffer> outputQueue = new LinkedList<>();
@@ -28,7 +32,8 @@ public abstract class NIOComponent<AT> implements Closeable {
         int state = CREATE;
 
         @SuppressWarnings("unchecked")
-        AttachmentWrapper(Object attachment) {
+        ChannelContext(SocketChannel channel, Object attachment) {
+            this.channel = channel;
             this.attachment = (T) attachment;
         }
     }
@@ -79,8 +84,8 @@ public abstract class NIOComponent<AT> implements Closeable {
     }
 
     @SuppressWarnings("unchecked")
-    private AttachmentWrapper<AT> attachment(SelectionKey key) {
-        return (AttachmentWrapper<AT>) key.attachment();
+    private ChannelContext<AT> context(SelectionKey key) {
+        return (ChannelContext<AT>) key.attachment();
     }
 
     public synchronized void connect() throws IOException {
@@ -129,25 +134,20 @@ public abstract class NIOComponent<AT> implements Closeable {
                         onAcceptable(key);
                     }
                     if (key.isReadable()) {
-                        SocketChannel channel = (SocketChannel) key.channel();
-                        AttachmentWrapper<AT> wrapper = attachment(key);
-                        if (wrapper.state != CONNECTED) {
-                            handleConnectionOnReadable(channel, wrapper);
+                        ChannelContext<AT> context = context(key);
+                        if (context.state != CONNECTED) {
+                            handleConnectionOnReadable(context);
                             continue;
                         }
-                        onReadable(channel, wrapper);
+                        onReadable(context);
                     }
                     if (key.isWritable()) {
-                        SocketChannel channel = (SocketChannel) key.channel();
-                        AttachmentWrapper<AT> wrapper = attachment(key);
-                        if (wrapper.state != CONNECTED) {
-                            handleConnectionOnWritable(channel, wrapper);
+                        ChannelContext<AT> context = context(key);
+                        if (context.state != CONNECTED) {
+                            handleConnectionOnWritable(context);
                             continue;
                         }
-                        List<String> messages = onWritable(wrapper.attachment);
-                        for (String msg : messages) {
-                            write(channel, wrapper, msg);
-                        }
+                        onWritable(context);
                     }
                 }
             } catch (ClosedSelectorException | CancelledKeyException e) {
@@ -172,16 +172,16 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
     }
 
-    private void handleConnectionOnReadable(SocketChannel channel, AttachmentWrapper<AT> wrapper) throws IOException {
-        ByteBuffer buffer = wrapper.inputBuffer;
+    private void handleConnectionOnReadable(ChannelContext<AT> context) throws IOException {
+        ByteBuffer buffer = context.inputBuffer;
         byte[] bf = buffer.array();
 
         /* client CLIENT_OK -> CONNECTED */
         if (!isServer) {
-            if (wrapper.state != CLIENT_OK) {
+            if (context.state != CLIENT_OK) {
                 return;
             }
-            if (channel.read(buffer) <= 0) {
+            if (context.channel.read(buffer) <= 0) {
                 return;
             }
             int p = 0;
@@ -190,21 +190,21 @@ public abstract class NIOComponent<AT> implements Closeable {
             if (p == 0 || p >= buffer.position()) {
                 return;
             }
-            byte[] bytes = decode(wrapper.encoder, buffer, 0, p);
+            byte[] bytes = decode(context.encoder, buffer, 0, p);
             String msg = new String(bytes, StandardCharsets.UTF_8);
             if (!OK.equals(msg)) {
                 throw new ConnectException("Failed to establish secure connection!");
             }
             strip(buffer, p + 1, buffer.position() - p - 1);
-            wrapper.state = CONNECTED;
+            context.state = CONNECTED;
             return;
         }
 
         /* server CREATE -> SERVER_OK */
-        if (wrapper.state != CREATE) {
+        if (context.state != CREATE) {
             return;
         }
-        if (channel.read(buffer) <= 0) {
+        if (context.channel.read(buffer) <= 0) {
             return;
         }
         int p = 0;
@@ -218,9 +218,9 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
         byte[] secretKey = decode(encoder, buffer, 0, p);
         byte[] iv = decode(encoder, buffer, p + 1, q - p - 1);
-        wrapper.encoder = new AESEncoder(secretKey, iv);
+        context.encoder = new AESEncoder(secretKey, iv);
         strip(buffer, q + 1, buffer.position() - q - 1);
-        wrapper.state = SERVER_OK;
+        context.state = SERVER_OK;
     }
 
     static void strip(ByteBuffer buffer, int pos, int count) {
@@ -234,23 +234,23 @@ public abstract class NIOComponent<AT> implements Closeable {
         return copy;
     }
 
-    private void handleConnectionOnWritable(SocketChannel channel, AttachmentWrapper<AT> wrapper)
+    private void handleConnectionOnWritable(ChannelContext<AT> context)
             throws IOException, NoSuchAlgorithmException {
         /* server SERVER_OK -> CONNECTED */
         if (isServer) {
-            if (wrapper.state == SERVER_OK) {
-                write(channel, wrapper, OK);
-                wrapper.state = CONNECTED;
+            if (context.state == SERVER_OK) {
+                write(context, OK);
+                context.state = CONNECTED;
             }
             return;
         }
 
         /* client CREATE -> CLIENT_OK */
-        if (wrapper.state == CREATE) {
-            wrapper.encoder = AESEncoder.generateEncoder();
-            write(channel, wrapper, encoder, wrapper.encoder.secretKey.getEncoded());
-            write(channel, wrapper, encoder, wrapper.encoder.iv.getIV());
-            wrapper.state = CLIENT_OK;
+        if (context.state == CREATE) {
+            context.encoder = AESEncoder.generateEncoder();
+            write(context, encoder, context.encoder.secretKey.getEncoded());
+            write(context, encoder, context.encoder.iv.getIV());
+            context.state = CLIENT_OK;
         }
     }
 
@@ -262,11 +262,11 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
     }
 
-    private void write(SocketChannel channel, AttachmentWrapper<AT> wrapper, String msg) throws IOException {
-        write(channel, wrapper, wrapper.encoder, msg.getBytes(StandardCharsets.UTF_8));
+    protected void write(ChannelContext<AT> context, String msg) throws IOException {
+        write(context, context.encoder, msg.getBytes(StandardCharsets.UTF_8));
     }
 
-    private void write(SocketChannel channel, AttachmentWrapper<AT> wrapper,
+    private void write(ChannelContext<AT> context,
                        AESEncoder encoder, byte[] bytes) throws IOException {
         try {
             bytes = escape(encoder.encrypt(bytes));
@@ -275,42 +275,41 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
         byte[] msg = copyOf(bytes, 0, bytes.length + 1);
         msg[msg.length - 1] = MESSAGE_DELIMITER;
-        wrapper.outputQueue.add(ByteBuffer.wrap(msg));
+        context.outputQueue.add(ByteBuffer.wrap(msg));
 
-        ByteBuffer bf = wrapper.outputQueue.peek();
+        ByteBuffer bf = context.outputQueue.peek();
         while (bf != null) {
-            if (channel.write(bf) <= 0) {
+            if (context.channel.write(bf) <= 0) {
                 break;
             }
             if (!bf.hasRemaining()) {
-                wrapper.outputQueue.poll();
-                bf = wrapper.outputQueue.peek();
+                context.outputQueue.poll();
+                bf = context.outputQueue.peek();
             }
         }
         if (bf != null && !bf.hasRemaining()) {
-            wrapper.outputQueue.poll();
+            context.outputQueue.poll();
         }
     }
 
     protected void onConnectable(SelectionKey key) throws IOException {
-        SocketChannel socketChannel = (SocketChannel) key.channel();
-        socketChannel.finishConnect();
-        socketChannel.register(selector, OPS);
-        key.attach(new AttachmentWrapper<>(attachmentSupplier.get()));
+        SocketChannel serverChannel = (SocketChannel) key.channel();
+        serverChannel.finishConnect();
+        serverChannel.register(selector, OPS);
+        key.attach(new ChannelContext<>(serverChannel, attachmentSupplier.get()));
     }
 
     protected void onAcceptable(SelectionKey key) throws IOException {
-        ServerSocketChannel serverSocketChannel = (ServerSocketChannel) key.channel();
-        SocketChannel socketChannel = serverSocketChannel.accept();
-        socketChannel.configureBlocking(false);
-        SelectionKey clientKey = socketChannel.register(selector, OPS);
-        clientKey.attach(new AttachmentWrapper<>(attachmentSupplier.get()));
+        ServerSocketChannel serverChannel = (ServerSocketChannel) key.channel();
+        SocketChannel clientChannel = serverChannel.accept();
+        clientChannel.configureBlocking(false);
+        SelectionKey clientKey = clientChannel.register(selector, OPS);
+        clientKey.attach(new ChannelContext<>(clientChannel, attachmentSupplier.get()));
     }
 
-    protected void onReadable(SocketChannel channel, AttachmentWrapper<AT> wrapper) throws IOException {
-        AT attachment = wrapper.attachment;
-        ByteBuffer buffer = wrapper.inputBuffer;
-        if (channel.read(buffer) <= 0) {
+    protected void onReadable(ChannelContext<AT> context) throws IOException {
+        ByteBuffer buffer = context.inputBuffer;
+        if (context.channel.read(buffer) <= 0) {
             return;
         }
         byte[] bf = buffer.array();
@@ -321,8 +320,8 @@ public abstract class NIOComponent<AT> implements Closeable {
                 if (len <= 0) {
                     continue;
                 }
-                byte[] msg = decode(wrapper.encoder, buffer, idx + 1, len);
-                onMessage(attachment, new String(msg, StandardCharsets.UTF_8));
+                byte[] msg = decode(context.encoder, buffer, idx + 1, len);
+                onMessage(context, new String(msg, StandardCharsets.UTF_8));
                 idx = i;
             }
         }
@@ -379,7 +378,7 @@ public abstract class NIOComponent<AT> implements Closeable {
         return Arrays.copyOf(bf, p);
     }
 
-    protected abstract void onMessage(AT attachment, String message);
+    protected abstract void onMessage(ChannelContext<AT> context, String message);
 
-    protected abstract List<String> onWritable(AT attachment);
+    protected abstract void onWritable(ChannelContext<AT> context) throws IOException;
 }

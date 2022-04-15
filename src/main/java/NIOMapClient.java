@@ -1,5 +1,9 @@
+import java.io.IOException;
 import java.net.SocketAddress;
-import java.util.*;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Queue;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 
@@ -61,21 +65,19 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
     }
 
     @Override
-    protected void onMessage(Queue<Command> attachment, String message) {
-        Command command = Objects.requireNonNull(attachment.poll());
+    protected void onMessage(ChannelContext<Queue<Command>> context, String message) {
+        Command command = Objects.requireNonNull(context.attachment.poll());
         command.onReturn(message);
     }
 
     @Override
-    protected List<String> onWritable(Queue<Command> attachment) {
-        List<String> messages = new LinkedList<>();
+    protected void onWritable(ChannelContext<Queue<Command>> context) throws IOException {
         Command command;
         while ((command = commandQueue.poll()) != null) {
-            messages.add(command.message);
-            attachment.add(command);
+            write(context, command.message);
+            context.attachment.add(command);
             lastCommandUpdater.set(this, command);
         }
-        return messages;
     }
 
     public void awaitFlush(long timeout, TimeUnit unit)
