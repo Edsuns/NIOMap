@@ -11,8 +11,7 @@ import java.util.List;
 import java.util.concurrent.*;
 import java.util.function.Function;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Created by Edsuns@qq.com on 2022/4/12.
@@ -41,6 +40,12 @@ public class NIOMapTest {
         String s = "abc\\mn\\\\\\n\ndef\\\n";
         assertNull(nioMapClient.put(s, s).get());
         assertEquals(s, nioMapClient.get(s).get());
+
+        // clear
+        int size = Integer.parseInt(nioMapClient.size().get());
+        assertTrue(size > 0);
+        assertEquals(size, Integer.parseInt(nioMapClient.clear().get()));
+        assertEquals("0", nioMapClient.size().get());
 
         nioMapClient.close();
         nioMapServer.close();

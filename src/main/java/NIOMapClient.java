@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by Edsuns@qq.com on 2022/4/12.
@@ -18,8 +18,7 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
     static class Command {
 
         final String message;
-        boolean returned = false;
-        String returnVal;
+        volatile String returnVal;
 
         private Command(String... cmd) {
             this.message = String.join(" ", cmd);
@@ -27,41 +26,31 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
 
         void onReturn(String message) {
             synchronized (Command.this) {
-                returnVal = "null".equals(message) ? null : message;
-                returned = true;
+                returnVal = message;
                 Command.this.notifyAll();
             }
         }
 
         public Future<String> returnValFuture() {
             return (ReturnValueFuture) () -> {
-                boolean r = returned;
-                if (r) {
-                    return returnVal;
-                }
-                synchronized (Command.this) {
-                    r = returned;
-                    if (r) {
-                        return returnVal;
+                String val = returnVal;
+                if (val == null) {
+                    synchronized (Command.this) {
+                        Command.this.wait(TIMEOUT_MS);
+                        val = returnVal;
+                        if (val == null) {
+                            throw new TimeoutException();
+                        }
                     }
-                    Command.this.wait(TIMEOUT_MS);
-                    r = returned;
-                    if (!r) {
-                        throw new TimeoutException();
-                    }
-                    return returnVal;
                 }
+                return "null".equals(val) ? null : val;
             };
         }
     }
 
     private final Queue<Command> commandQueue = new ConcurrentLinkedQueue<>();
 
-    volatile Command lastCommand;
-    static final AtomicReferenceFieldUpdater<NIOMapClient, Command>
-            lastCommandUpdater = AtomicReferenceFieldUpdater.newUpdater(
-            NIOMapClient.class, Command.class, "lastCommand"
-    );
+    private final AtomicInteger cmdNeedReturn = new AtomicInteger(0);
 
     protected NIOMapClient(SocketAddress address, AESEncoder encoder) {
         super(address, false, encoder, LinkedList::new);
@@ -71,6 +60,12 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
     protected void onMessage(ChannelContext<Queue<Command>> context, String message) {
         Command command = Objects.requireNonNull(context.attachment.poll());
         command.onReturn(message);
+
+        if (cmdNeedReturn.decrementAndGet() <= 0 && commandQueue.isEmpty()) {
+            synchronized (cmdNeedReturn) {
+                cmdNeedReturn.notifyAll();
+            }
+        }
     }
 
     @Override
@@ -79,23 +74,15 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
         while ((command = commandQueue.poll()) != null) {
             write(context, command.message);
             context.attachment.add(command);
-            lastCommandUpdater.set(this, command);
+
+            cmdNeedReturn.incrementAndGet();
         }
     }
 
-    public void awaitFlush(long timeout, TimeUnit unit)
-            throws ExecutionException, InterruptedException, TimeoutException {
+    public void awaitFlush(long timeout, TimeUnit unit) throws ExecutionException, InterruptedException {
         long limitMs = unit.toMillis(timeout);
-        long start = System.currentTimeMillis();
-        while (!commandQueue.isEmpty()) {
-            if (System.currentTimeMillis() - start > limitMs) {
-                throw new TimeoutException();
-            }
-        }
-        Command command = lastCommandUpdater.get(this);
-        if (command != null) {
-            limitMs -= (System.currentTimeMillis() - start);
-            command.returnValFuture().get(limitMs, TimeUnit.MILLISECONDS);
+        synchronized (cmdNeedReturn) {
+            cmdNeedReturn.wait(limitMs);
         }
     }
 
@@ -131,5 +118,12 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
      */
     public Future<String> size() {
         return enqueueCommand("size");
+    }
+
+    /**
+     * @see Map#clear()
+     */
+    public Future<String> clear() {
+        return enqueueCommand("clear");
     }
 }

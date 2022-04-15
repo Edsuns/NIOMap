@@ -36,6 +36,9 @@ public class NIOMapServer extends NIOComponent<Queue<String>> {
             returnVal = map.remove(cmd[1]);
         } else if ("size".equals(cmd[0])) {
             returnVal = String.valueOf(map.size());
+        } else if ("clear".equals(cmd[0])) {
+            returnVal = String.valueOf(map.size());
+            map.clear();
         } else {
             throw new UnsupportedOperationException(message);
         }
