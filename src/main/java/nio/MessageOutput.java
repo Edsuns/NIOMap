@@ -15,7 +15,8 @@ class MessageOutput implements InputOutput {
     final NIOComponent.ChannelContext<?> context;
     final Queue<ByteBuffer> queue = new LinkedList<>();
 
-    public static long write = 0L;
+    static long write = 0L;
+    static long encode = 0L;
 
     MessageOutput(NIOComponent.ChannelContext<?> context) {
         this.context = context;
@@ -26,6 +27,7 @@ class MessageOutput implements InputOutput {
     }
 
     void write(AESEncoder encoder, byte[] bytes) throws IOException {
+        long start = System.currentTimeMillis();
         try {
             bytes = InputOutput.escape(encoder.encrypt(bytes));
         } catch (BadPaddingException | IllegalBlockSizeException | InvalidKeyException e) {
@@ -34,10 +36,11 @@ class MessageOutput implements InputOutput {
         byte[] msg = InputOutput.copyOf(bytes, 0, bytes.length + 1);
         msg[msg.length - 1] = MESSAGE_DELIMITER;
         queue.add(ByteBuffer.wrap(msg));
+        encode += (System.currentTimeMillis() - start);
 
         ByteBuffer bf = queue.peek();
         while (bf != null) {
-            long start = System.currentTimeMillis();
+            start = System.currentTimeMillis();
             if (context.channel.write(bf) <= 0) {
                 break;
             }

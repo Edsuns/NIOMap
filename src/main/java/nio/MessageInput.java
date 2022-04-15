@@ -19,6 +19,7 @@ class MessageInput implements InputOutput {
     final Deque<Integer> split = new LinkedList<>();
 
     static long read = 0L;
+    static long decode = 0L;
 
     MessageInput(NIOComponent.ChannelContext<?> context) {
         this.context = context;
@@ -58,6 +59,7 @@ class MessageInput implements InputOutput {
     }
 
     List<byte[]> strip(AESEncoder encoder, int maxCount) throws IOException {
+        long start = System.currentTimeMillis();
         List<byte[]> result = new ArrayList<>();
         int left = -1;
         for (int i = 0, c = Math.min(maxCount, split.size()); i < c; i++) {
@@ -67,6 +69,7 @@ class MessageInput implements InputOutput {
             left = right;
         }
         strip(bf, left + 1, bf.position() - left - 1);
+        decode += (System.currentTimeMillis() - start);
         return result;
     }
 
