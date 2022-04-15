@@ -94,7 +94,7 @@ public class AESEncoder {
     }
 
     public static SecretKey generateKey(int n) throws NoSuchAlgorithmException {
-        KeyGenerator keyGenerator = KeyGenerator.getInstance("AES");// only AES
+        KeyGenerator keyGenerator = KeyGenerator.getInstance(ALGORITHM_RAW);
         keyGenerator.init(n);
         return keyGenerator.generateKey();
     }
