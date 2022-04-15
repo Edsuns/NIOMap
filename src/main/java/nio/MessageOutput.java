@@ -15,6 +15,8 @@ class MessageOutput implements InputOutput {
     final NIOComponent.ChannelContext<?> context;
     final Queue<ByteBuffer> queue = new LinkedList<>();
 
+    public static long write = 0L;
+
     MessageOutput(NIOComponent.ChannelContext<?> context) {
         this.context = context;
     }
@@ -35,9 +37,11 @@ class MessageOutput implements InputOutput {
 
         ByteBuffer bf = queue.peek();
         while (bf != null) {
+            long start = System.currentTimeMillis();
             if (context.channel.write(bf) <= 0) {
                 break;
             }
+            write += (System.currentTimeMillis() - start);
             if (!bf.hasRemaining()) {
                 queue.poll();
                 bf = queue.peek();

@@ -106,16 +106,31 @@ public abstract class NIOComponent<AT> implements Closeable {
             thread = null;
             selector = null;
         }
+        if (MessageInput.read > 0) {
+            System.out.println("total read: " + MessageInput.read + "ms");
+            MessageInput.read = 0L;
+        }
+        if (MessageOutput.write > 0) {
+            System.out.println("total write: " + MessageOutput.write + "ms");
+            MessageOutput.write = 0L;
+        }
+        String name = isServer ? "server" : "client";
+        System.out.println(name + " select: " + select + "ms");
     }
+
+    long select = 0L;
 
     private void handleEvents() {
         Selector s;
         while (!Thread.currentThread().isInterrupted() && (s = selector) != null) {
             SelectionKey key = null;
             try {
+                long start = System.currentTimeMillis();
                 if (s.select(TIMEOUT_MS) <= 0) {
+                    select += (System.currentTimeMillis() - start);
                     continue;
                 }
+                select += (System.currentTimeMillis() - start);
                 Iterator<SelectionKey> iterator = s.selectedKeys().iterator();
                 while (iterator.hasNext()) {
                     key = iterator.next();

@@ -18,6 +18,8 @@ class MessageInput implements InputOutput {
     ByteBuffer bf = ByteBuffer.allocate(BUFFER_SIZE);
     final Deque<Integer> split = new LinkedList<>();
 
+    static long read = 0L;
+
     MessageInput(NIOComponent.ChannelContext<?> context) {
         this.context = context;
     }
@@ -27,13 +29,17 @@ class MessageInput implements InputOutput {
     }
 
     boolean read(int required) throws IOException {
+        long start = System.currentTimeMillis();
         do {
+            read += (System.currentTimeMillis() - start);
             if (!bf.hasRemaining()) {
                 int p = bf.position();
                 bf = ByteBuffer.wrap(InputOutput.copyOf(bf.array(), 0, p + BUFFER_SIZE));
                 bf.position(p);
             }
+            start = System.currentTimeMillis();
         } while (context.channel.read(bf) > 0);
+        read += (System.currentTimeMillis() - start);
         Integer last = split.peekLast();
         for (int i = last != null ? last + 1 : 0; i < bf.position(); i++) {
             if (bf.get(i) == MESSAGE_DELIMITER) {
