@@ -37,6 +37,7 @@ public abstract class NIOComponent<AT> implements Closeable {
     static final String OK = "OK";
 
     static final byte MESSAGE_DELIMITER = '\n';
+
     /**
      * {@link SelectionKey}
      */
@@ -145,7 +146,7 @@ public abstract class NIOComponent<AT> implements Closeable {
                         }
                         List<String> messages = onWritable(wrapper.attachment);
                         for (String msg : messages) {
-                            write(channel, wrapper, msg.getBytes(StandardCharsets.UTF_8));
+                            write(channel, wrapper, msg);
                         }
                     }
                 }
@@ -171,8 +172,7 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
     }
 
-    private void handleConnectionOnReadable(SocketChannel channel, AttachmentWrapper<AT> wrapper)
-            throws IOException, IllegalBlockSizeException, BadPaddingException, InvalidKeyException {
+    private void handleConnectionOnReadable(SocketChannel channel, AttachmentWrapper<AT> wrapper) throws IOException {
         ByteBuffer buffer = wrapper.inputBuffer;
         byte[] bf = buffer.array();
 
@@ -190,7 +190,8 @@ public abstract class NIOComponent<AT> implements Closeable {
             if (p == 0 || p >= buffer.position()) {
                 return;
             }
-            String msg = new String(wrapper.encoder.decrypt(unescape(copyOf(bf, 0, p))), StandardCharsets.UTF_8);
+            byte[] bytes = decode(wrapper.encoder, buffer, 0, p);
+            String msg = new String(bytes, StandardCharsets.UTF_8);
             if (!OK.equals(msg)) {
                 throw new ConnectException("Failed to establish secure connection!");
             }
@@ -215,8 +216,8 @@ public abstract class NIOComponent<AT> implements Closeable {
         if (p == 0 || q == p || q >= buffer.position()) {
             return;
         }
-        byte[] secretKey = encoder.decrypt(unescape(copyOf(bf, 0, p)));
-        byte[] iv = encoder.decrypt(unescape(copyOf(bf, p + 1, q - p - 1)));
+        byte[] secretKey = decode(encoder, buffer, 0, p);
+        byte[] iv = decode(encoder, buffer, p + 1, q - p - 1);
         wrapper.encoder = new AESEncoder(secretKey, iv);
         strip(buffer, q + 1, buffer.position() - q - 1);
         wrapper.state = SERVER_OK;
@@ -238,7 +239,7 @@ public abstract class NIOComponent<AT> implements Closeable {
         /* server SERVER_OK -> CONNECTED */
         if (isServer) {
             if (wrapper.state == SERVER_OK) {
-                write(channel, wrapper, OK.getBytes(StandardCharsets.UTF_8));
+                write(channel, wrapper, OK);
                 wrapper.state = CONNECTED;
             }
             return;
@@ -253,8 +254,16 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
     }
 
-    private void write(SocketChannel channel, AttachmentWrapper<AT> wrapper, byte[] bytes) throws IOException {
-        write(channel, wrapper, wrapper.encoder, bytes);
+    private byte[] decode(AESEncoder encoder, ByteBuffer buffer, int pos, int count) throws IOException {
+        try {
+            return encoder.decrypt(unescape(copyOf(buffer.array(), pos, count)));
+        } catch (BadPaddingException | IllegalBlockSizeException | InvalidKeyException e) {
+            throw new IOException(e);
+        }
+    }
+
+    private void write(SocketChannel channel, AttachmentWrapper<AT> wrapper, String msg) throws IOException {
+        write(channel, wrapper, wrapper.encoder, msg.getBytes(StandardCharsets.UTF_8));
     }
 
     private void write(SocketChannel channel, AttachmentWrapper<AT> wrapper,
@@ -312,12 +321,7 @@ public abstract class NIOComponent<AT> implements Closeable {
                 if (len <= 0) {
                     continue;
                 }
-                byte[] msg;
-                try {
-                    msg = wrapper.encoder.decrypt(unescape(copyOf(bf, idx + 1, len)));
-                } catch (BadPaddingException | IllegalBlockSizeException | InvalidKeyException e) {
-                    throw new IOException(e);
-                }
+                byte[] msg = decode(wrapper.encoder, buffer, idx + 1, len);
                 onMessage(attachment, new String(msg, StandardCharsets.UTF_8));
                 idx = i;
             }

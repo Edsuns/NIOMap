@@ -4,11 +4,7 @@ import java.util.*;
 /**
  * Created by Edsuns@qq.com on 2022/4/12.
  */
-public class NIOMapServer extends NIOComponent<NIOMapServer.ServerAttachment> {
-
-    static class ServerAttachment {
-        final Queue<String> queue = new LinkedList<>();
-    }
+public class NIOMapServer extends NIOComponent<Queue<String>> {
 
     final Map<String, String> map;
 
@@ -17,12 +13,12 @@ public class NIOMapServer extends NIOComponent<NIOMapServer.ServerAttachment> {
     }
 
     protected NIOMapServer(SocketAddress address, AESEncoder encoder, Map<String, String> map) {
-        super(address, true, encoder, ServerAttachment::new);
+        super(address, true, encoder, LinkedList::new);
         this.map = map;
     }
 
     @Override
-    protected void onMessage(ServerAttachment attachment, String message) {
+    protected void onMessage(Queue<String> attachment, String message) {
         String returnVal;
         String[] cmd = message.split(" ");
         if ("put".equals(cmd[0])) {
@@ -37,14 +33,14 @@ public class NIOMapServer extends NIOComponent<NIOMapServer.ServerAttachment> {
             throw new UnsupportedOperationException(message);
         }
 
-        attachment.queue.add(returnVal != null ? returnVal : "null");
+        attachment.add(returnVal != null ? returnVal : "null");
     }
 
     @Override
-    protected List<String> onWritable(ServerAttachment attachment) {
-        List<String> messages = new ArrayList<>(attachment.queue.size());
+    protected List<String> onWritable(Queue<String> attachment) {
+        List<String> messages = new ArrayList<>(attachment.size());
         String returnVal;
-        while ((returnVal = attachment.queue.poll()) != null) {
+        while ((returnVal = attachment.poll()) != null) {
             messages.add(returnVal);
         }
         return messages;
