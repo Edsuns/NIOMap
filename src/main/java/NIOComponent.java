@@ -12,9 +12,7 @@ import java.nio.channels.spi.SelectorProvider;
 import java.nio.charset.StandardCharsets;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.function.Supplier;
 
 /**
@@ -22,13 +20,16 @@ import java.util.function.Supplier;
  */
 public abstract class NIOComponent<AT> implements Closeable {
 
-    static class AttachmentWrapper {
-        final Object attachment;
+    protected static class AttachmentWrapper<T> {
+        protected final T attachment;
+        final ByteBuffer inputBuffer = ByteBuffer.allocate(4096);
+        final Queue<ByteBuffer> outputQueue = new LinkedList<>();
         AESEncoder encoder;
         int state = CREATE;
 
+        @SuppressWarnings("unchecked")
         AttachmentWrapper(Object attachment) {
-            this.attachment = attachment;
+            this.attachment = (T) attachment;
         }
     }
 
@@ -77,8 +78,8 @@ public abstract class NIOComponent<AT> implements Closeable {
     }
 
     @SuppressWarnings("unchecked")
-    private AT attachment(SelectionKey key) {
-        return (AT) ((AttachmentWrapper) key.attachment()).attachment;
+    private AttachmentWrapper<AT> attachment(SelectionKey key) {
+        return (AttachmentWrapper<AT>) key.attachment();
     }
 
     public synchronized void connect() throws IOException {
@@ -128,25 +129,23 @@ public abstract class NIOComponent<AT> implements Closeable {
                     }
                     if (key.isReadable()) {
                         SocketChannel channel = (SocketChannel) key.channel();
-                        AttachmentWrapper wrapper = (AttachmentWrapper) key.attachment();
-                        AT attachment = attachment(key);
+                        AttachmentWrapper<AT> wrapper = attachment(key);
                         if (wrapper.state != CONNECTED) {
-                            handleConnectionOnReadable(channel, wrapper, attachment);
+                            handleConnectionOnReadable(channel, wrapper);
                             continue;
                         }
-                        onReadable(channel, wrapper.encoder, attachment);
+                        onReadable(channel, wrapper);
                     }
                     if (key.isWritable()) {
                         SocketChannel channel = (SocketChannel) key.channel();
-                        AttachmentWrapper wrapper = (AttachmentWrapper) key.attachment();
+                        AttachmentWrapper<AT> wrapper = attachment(key);
                         if (wrapper.state != CONNECTED) {
                             handleConnectionOnWritable(channel, wrapper);
                             continue;
                         }
-                        AT attachment = attachment(key);
-                        List<String> messages = onWritable(attachment);
+                        List<String> messages = onWritable(wrapper.attachment);
                         for (String msg : messages) {
-                            write(channel, wrapper.encoder, msg.getBytes(StandardCharsets.UTF_8));
+                            write(channel, wrapper, msg.getBytes(StandardCharsets.UTF_8));
                         }
                     }
                 }
@@ -172,9 +171,9 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
     }
 
-    private void handleConnectionOnReadable(SocketChannel channel, AttachmentWrapper wrapper, AT attachment)
+    private void handleConnectionOnReadable(SocketChannel channel, AttachmentWrapper<AT> wrapper)
             throws IOException, IllegalBlockSizeException, BadPaddingException, InvalidKeyException {
-        ByteBuffer buffer = getBuffer(attachment);
+        ByteBuffer buffer = wrapper.inputBuffer;
         byte[] bf = buffer.array();
 
         /* client CLIENT_OK -> CONNECTED */
@@ -234,12 +233,12 @@ public abstract class NIOComponent<AT> implements Closeable {
         return copy;
     }
 
-    private void handleConnectionOnWritable(SocketChannel channel, AttachmentWrapper wrapper)
+    private void handleConnectionOnWritable(SocketChannel channel, AttachmentWrapper<AT> wrapper)
             throws IOException, NoSuchAlgorithmException {
         /* server SERVER_OK -> CONNECTED */
         if (isServer) {
             if (wrapper.state == SERVER_OK) {
-                write(channel, wrapper.encoder, OK.getBytes(StandardCharsets.UTF_8));
+                write(channel, wrapper, OK.getBytes(StandardCharsets.UTF_8));
                 wrapper.state = CONNECTED;
             }
             return;
@@ -248,13 +247,18 @@ public abstract class NIOComponent<AT> implements Closeable {
         /* client CREATE -> CLIENT_OK */
         if (wrapper.state == CREATE) {
             wrapper.encoder = AESEncoder.generateEncoder();
-            write(channel, encoder, wrapper.encoder.secretKey.getEncoded());
-            write(channel, encoder, wrapper.encoder.iv.getIV());
+            write(channel, wrapper, encoder, wrapper.encoder.secretKey.getEncoded());
+            write(channel, wrapper, encoder, wrapper.encoder.iv.getIV());
             wrapper.state = CLIENT_OK;
         }
     }
 
-    private void write(SocketChannel channel, AESEncoder encoder, byte[] bytes) throws IOException {
+    private void write(SocketChannel channel, AttachmentWrapper<AT> wrapper, byte[] bytes) throws IOException {
+        write(channel, wrapper, wrapper.encoder, bytes);
+    }
+
+    private void write(SocketChannel channel, AttachmentWrapper<AT> wrapper,
+                       AESEncoder encoder, byte[] bytes) throws IOException {
         try {
             bytes = escape(encoder.encrypt(bytes));
         } catch (BadPaddingException | IllegalBlockSizeException | InvalidKeyException e) {
@@ -262,9 +266,20 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
         byte[] msg = copyOf(bytes, 0, bytes.length + 1);
         msg[msg.length - 1] = MESSAGE_DELIMITER;
-        ByteBuffer bf = ByteBuffer.wrap(msg);
-        while (bf.hasRemaining()) {
-            channel.write(bf);
+        wrapper.outputQueue.add(ByteBuffer.wrap(msg));
+
+        ByteBuffer bf = wrapper.outputQueue.peek();
+        while (bf != null) {
+            if (channel.write(bf) <= 0) {
+                break;
+            }
+            if (!bf.hasRemaining()) {
+                wrapper.outputQueue.poll();
+                bf = wrapper.outputQueue.peek();
+            }
+        }
+        if (bf != null && !bf.hasRemaining()) {
+            wrapper.outputQueue.poll();
         }
     }
 
@@ -272,7 +287,7 @@ public abstract class NIOComponent<AT> implements Closeable {
         SocketChannel socketChannel = (SocketChannel) key.channel();
         socketChannel.finishConnect();
         socketChannel.register(selector, OPS);
-        key.attach(new AttachmentWrapper(attachmentSupplier.get()));
+        key.attach(new AttachmentWrapper<>(attachmentSupplier.get()));
     }
 
     protected void onAcceptable(SelectionKey key) throws IOException {
@@ -280,11 +295,12 @@ public abstract class NIOComponent<AT> implements Closeable {
         SocketChannel socketChannel = serverSocketChannel.accept();
         socketChannel.configureBlocking(false);
         SelectionKey clientKey = socketChannel.register(selector, OPS);
-        clientKey.attach(new AttachmentWrapper(attachmentSupplier.get()));
+        clientKey.attach(new AttachmentWrapper<>(attachmentSupplier.get()));
     }
 
-    protected void onReadable(SocketChannel channel, AESEncoder encoder, AT attachment) throws IOException, IllegalBlockSizeException, BadPaddingException, InvalidKeyException {
-        ByteBuffer buffer = getBuffer(attachment);
+    protected void onReadable(SocketChannel channel, AttachmentWrapper<AT> wrapper) throws IOException {
+        AT attachment = wrapper.attachment;
+        ByteBuffer buffer = wrapper.inputBuffer;
         if (channel.read(buffer) <= 0) {
             return;
         }
@@ -296,8 +312,13 @@ public abstract class NIOComponent<AT> implements Closeable {
                 if (len <= 0) {
                     continue;
                 }
-                byte[] msg = copyOf(bf, idx + 1, len);
-                onMessage(attachment, new String(encoder.decrypt(unescape(msg)), StandardCharsets.UTF_8));
+                byte[] msg;
+                try {
+                    msg = wrapper.encoder.decrypt(unescape(copyOf(bf, idx + 1, len)));
+                } catch (BadPaddingException | IllegalBlockSizeException | InvalidKeyException e) {
+                    throw new IOException(e);
+                }
+                onMessage(attachment, new String(msg, StandardCharsets.UTF_8));
                 idx = i;
             }
         }
@@ -353,8 +374,6 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
         return Arrays.copyOf(bf, p);
     }
-
-    protected abstract ByteBuffer getBuffer(AT attachment);
 
     protected abstract void onMessage(AT attachment, String message);
 

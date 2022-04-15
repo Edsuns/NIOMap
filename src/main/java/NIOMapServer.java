@@ -1,5 +1,4 @@
 import java.net.SocketAddress;
-import java.nio.ByteBuffer;
 import java.util.*;
 
 /**
@@ -9,7 +8,6 @@ public class NIOMapServer extends NIOComponent<NIOMapServer.ServerAttachment> {
 
     static class ServerAttachment {
         final Queue<String> queue = new LinkedList<>();
-        final ByteBuffer buffer = ByteBuffer.allocate(2048);
     }
 
     final Map<String, String> map;
@@ -21,11 +19,6 @@ public class NIOMapServer extends NIOComponent<NIOMapServer.ServerAttachment> {
     protected NIOMapServer(SocketAddress address, AESEncoder encoder, Map<String, String> map) {
         super(address, true, encoder, ServerAttachment::new);
         this.map = map;
-    }
-
-    @Override
-    protected ByteBuffer getBuffer(ServerAttachment attachment) {
-        return attachment.buffer;
     }
 
     @Override

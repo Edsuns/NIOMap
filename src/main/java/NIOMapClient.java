@@ -1,5 +1,4 @@
 import java.net.SocketAddress;
-import java.nio.ByteBuffer;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
@@ -57,15 +56,8 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
             NIOMapClient.class, Command.class, "lastCommand"
     );
 
-    private final ByteBuffer buffer = ByteBuffer.allocate(2048);
-
     protected NIOMapClient(SocketAddress address, AESEncoder encoder) {
         super(address, false, encoder, LinkedList::new);
-    }
-
-    @Override
-    protected ByteBuffer getBuffer(Queue<Command> attachment) {
-        return buffer;
     }
 
     @Override
