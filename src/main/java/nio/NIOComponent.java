@@ -1,3 +1,5 @@
+package nio;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.net.ConnectException;
@@ -18,8 +20,8 @@ import java.util.function.Supplier;
 public abstract class NIOComponent<AT> implements Closeable {
 
     protected static class ChannelContext<T> {
-        protected final SocketChannel channel;
-        protected final T attachment;
+        public final SocketChannel channel;
+        public final T attachment;
         final MessageInput messageInput = new MessageInput(this);
         final MessageOutput messageOutput = new MessageOutput(this);
         AESEncoder encoder;
