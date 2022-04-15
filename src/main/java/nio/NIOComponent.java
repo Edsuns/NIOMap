@@ -106,21 +106,17 @@ public abstract class NIOComponent<AT> implements Closeable {
             thread = null;
             selector = null;
         }
-        if (MessageInput.read > 0) {
+        if (MessageInput.read.getAndSet(0L) > 0) {
             System.out.println("total read: " + MessageInput.read + "ms");
-            MessageInput.read = 0L;
         }
-        if (MessageOutput.write > 0) {
+        if (MessageOutput.write.getAndSet(0L) > 0) {
             System.out.println("total write: " + MessageOutput.write + "ms");
-            MessageOutput.write = 0L;
         }
-        if (MessageInput.decode > 0) {
+        if (MessageInput.decode.getAndSet(0L) > 0) {
             System.out.println("total decode: " + MessageInput.decode + "ms");
-            MessageInput.decode = 0L;
         }
-        if (MessageOutput.encode > 0) {
+        if (MessageOutput.encode.getAndSet(0L) > 0) {
             System.out.println("total encode: " + MessageOutput.encode + "ms");
-            MessageOutput.encode = 0L;
         }
         String name = isServer ? "server" : "client";
         System.out.println(name + " select: " + select + "ms");

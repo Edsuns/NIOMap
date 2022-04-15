@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Created by Edsuns@qq.com on 2022/4/15.
@@ -18,8 +19,8 @@ class MessageInput implements InputOutput {
     ByteBuffer bf = ByteBuffer.allocate(BUFFER_SIZE);
     final Deque<Integer> split = new LinkedList<>();
 
-    static long read = 0L;
-    static long decode = 0L;
+    static final AtomicLong read = new AtomicLong(0L);
+    static final AtomicLong decode = new AtomicLong(0L);
 
     MessageInput(NIOComponent.ChannelContext<?> context) {
         this.context = context;
@@ -32,7 +33,8 @@ class MessageInput implements InputOutput {
     boolean read(int required) throws IOException {
         long start = System.currentTimeMillis();
         do {
-            read += (System.currentTimeMillis() - start);
+            long finalStart = start;
+            read.getAndUpdate(old -> old + (System.currentTimeMillis() - finalStart));
             if (!bf.hasRemaining()) {
                 int p = bf.position();
                 bf = ByteBuffer.wrap(InputOutput.copyOf(bf.array(), 0, p + BUFFER_SIZE));
@@ -40,7 +42,8 @@ class MessageInput implements InputOutput {
             }
             start = System.currentTimeMillis();
         } while (context.channel.read(bf) > 0);
-        read += (System.currentTimeMillis() - start);
+        long finalStart1 = start;
+        read.getAndUpdate(old -> old + (System.currentTimeMillis() - finalStart1));
         Integer last = split.peekLast();
         for (int i = last != null ? last + 1 : 0; i < bf.position(); i++) {
             if (bf.get(i) == MESSAGE_DELIMITER) {
@@ -69,7 +72,7 @@ class MessageInput implements InputOutput {
             left = right;
         }
         strip(bf, left + 1, bf.position() - left - 1);
-        decode += (System.currentTimeMillis() - start);
+        decode.getAndUpdate(old -> old + (System.currentTimeMillis() - start));
         return result;
     }
 
