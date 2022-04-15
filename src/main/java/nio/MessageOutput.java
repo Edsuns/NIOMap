@@ -37,22 +37,24 @@ class MessageOutput implements InputOutput {
         byte[] msg = InputOutput.copyOf(bytes, 0, bytes.length + 1);
         msg[msg.length - 1] = MESSAGE_DELIMITER;
         queue.add(ByteBuffer.wrap(msg));
-        long finalStart = start;
-        encode.getAndUpdate(old -> old + (System.currentTimeMillis() - finalStart));
+
+        encode.getAndAdd(System.currentTimeMillis() - start);
+
+        start = System.currentTimeMillis();
 
         ByteBuffer bf = queue.peek();
         while (bf != null) {
-            start = System.currentTimeMillis();
             if (context.channel.write(bf) <= 0) {
                 break;
             }
-            long finalStart1 = start;
-            write.getAndUpdate(old -> old + (System.currentTimeMillis() - finalStart1));
             if (!bf.hasRemaining()) {
                 queue.poll();
                 bf = queue.peek();
             }
         }
+
+        write.getAndAdd(System.currentTimeMillis() - start);
+
         if (bf != null && !bf.hasRemaining()) {
             queue.poll();
         }

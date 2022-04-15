@@ -32,18 +32,22 @@ class MessageInput implements InputOutput {
 
     boolean read(int required) throws IOException {
         long start = System.currentTimeMillis();
+
         do {
-            long finalStart = start;
-            read.getAndUpdate(old -> old + (System.currentTimeMillis() - finalStart));
+            read.getAndAdd(System.currentTimeMillis() - start);
+
             if (!bf.hasRemaining()) {
                 int p = bf.position();
                 bf = ByteBuffer.wrap(InputOutput.copyOf(bf.array(), 0, p + BUFFER_SIZE));
                 bf.position(p);
             }
+
             start = System.currentTimeMillis();
+
         } while (context.channel.read(bf) > 0);
-        long finalStart1 = start;
-        read.getAndUpdate(old -> old + (System.currentTimeMillis() - finalStart1));
+
+        read.getAndAdd(System.currentTimeMillis() - start);
+
         Integer last = split.peekLast();
         for (int i = last != null ? last + 1 : 0; i < bf.position(); i++) {
             if (bf.get(i) == MESSAGE_DELIMITER) {
@@ -63,6 +67,7 @@ class MessageInput implements InputOutput {
 
     List<byte[]> strip(AESEncoder encoder, int maxCount) throws IOException {
         long start = System.currentTimeMillis();
+
         List<byte[]> result = new ArrayList<>();
         int left = -1;
         for (int i = 0, c = Math.min(maxCount, split.size()); i < c; i++) {
@@ -72,7 +77,9 @@ class MessageInput implements InputOutput {
             left = right;
         }
         strip(bf, left + 1, bf.position() - left - 1);
-        decode.getAndUpdate(old -> old + (System.currentTimeMillis() - start));
+
+        decode.getAndAdd(System.currentTimeMillis() - start);
+
         return result;
     }
 
