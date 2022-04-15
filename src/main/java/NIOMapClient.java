@@ -26,32 +26,32 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
         }
 
         void onReturn(String message) {
-            synchronized (this) {
+            synchronized (Command.this) {
                 returnVal = "null".equals(message) ? null : message;
                 returned = true;
-                this.notifyAll();
+                Command.this.notifyAll();
             }
         }
 
         public Future<String> returnValFuture() {
-            return new ReturnValueFuture((timeout, unit) -> {
+            return (ReturnValueFuture) () -> {
                 boolean r = returned;
                 if (r) {
                     return returnVal;
                 }
-                synchronized (this) {
+                synchronized (Command.this) {
                     r = returned;
                     if (r) {
                         return returnVal;
                     }
-                    this.wait(unit.toMillis(timeout));
+                    Command.this.wait(TIMEOUT_MS);
                     r = returned;
                     if (!r) {
                         throw new TimeoutException();
                     }
                     return returnVal;
                 }
-            });
+            };
         }
     }
 

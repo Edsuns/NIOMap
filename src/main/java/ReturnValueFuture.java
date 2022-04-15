@@ -1,46 +1,50 @@
-import nio.NIOComponent;
-
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.*;
 
 /**
  * Created by Edsuns@qq.com on 2022/4/12.
  */
-class ReturnValueFuture implements Future<String> {
-
-    final ReturnValueTask task;
-
-    ReturnValueFuture(ReturnValueTask task) {
-        this.task = task;
-    }
+interface ReturnValueFuture extends Future<String>, Callable<String> {
 
     @Override
-    public boolean cancel(boolean mayInterruptIfRunning) {
+    default boolean cancel(boolean mayInterruptIfRunning) {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public boolean isCancelled() {
+    default boolean isCancelled() {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public boolean isDone() {
+    default boolean isDone() {
         throw new UnsupportedOperationException();
     }
 
     @Override
-    public String get() throws InterruptedException {
+    default String get() throws InterruptedException, ExecutionException {
         try {
-            return get(NIOComponent.TIMEOUT_MS, TimeUnit.MILLISECONDS);
+            return get(-1L, null);
         } catch (TimeoutException e) {
-            throw new RuntimeException(e);
+            throw new ExecutionException(e);
         }
     }
 
     @Override
-    public String get(long timeout, TimeUnit unit) throws InterruptedException, TimeoutException {
-        return task.get(timeout, unit);
+    default String get(long timeout, TimeUnit unit)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        try {
+            return call();
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                throw (InterruptedException) e;
+            }
+            if (e instanceof ExecutionException) {
+                throw (ExecutionException) e;
+            }
+            if (e instanceof TimeoutException) {
+                throw (TimeoutException) e;
+            }
+            throw new ExecutionException(e);
+        }
     }
 }
