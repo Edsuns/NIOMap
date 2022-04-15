@@ -12,7 +12,7 @@ public class MessageEscapeTest {
     @Test
     public void test() {
         String s = "abc\\mn\\\\\\n\ndef\\\n";
-        byte[] escaped = NIOComponent.escape(s.getBytes(StandardCharsets.UTF_8));
-        assertEquals(s, new String(NIOComponent.unescape(escaped), StandardCharsets.UTF_8));
+        byte[] escaped = InputOutput.escape(s.getBytes(StandardCharsets.UTF_8));
+        assertEquals(s, new String(InputOutput.unescape(escaped), StandardCharsets.UTF_8));
     }
 }
