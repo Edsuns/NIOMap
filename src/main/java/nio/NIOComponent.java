@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 /**
@@ -180,7 +181,7 @@ public abstract class NIOComponent<AT> implements Closeable {
             }
             byte[] bytes = input.strip(1).get(0);
             String msg = new String(bytes, StandardCharsets.UTF_8);
-            if (!OK.equals(msg)) {
+            if (!msg.startsWith(OK) || msg.length() <= OK.length()) {
                 throw new ConnectException("Failed to establish secure connection!");
             }
             context.state = CONNECTED;
@@ -204,7 +205,7 @@ public abstract class NIOComponent<AT> implements Closeable {
         /* server SERVER_OK -> CONNECTED */
         if (isServer) {
             if (context.state == SERVER_OK) {
-                write(context, OK);
+                write(context, OK + UUID.randomUUID());
                 context.state = CONNECTED;
             }
             return;
