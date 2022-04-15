@@ -1,3 +1,5 @@
+import nio.NIOComponent;
+
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -31,7 +33,7 @@ class ReturnValueFuture implements Future<String> {
     @Override
     public String get() throws InterruptedException {
         try {
-            return get(10_000L, TimeUnit.MILLISECONDS);
+            return get(NIOComponent.TIMEOUT_MS, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             throw new RuntimeException(e);
         }

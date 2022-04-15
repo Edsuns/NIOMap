@@ -34,6 +34,7 @@ public abstract class NIOComponent<AT> implements Closeable {
         }
     }
 
+    public static final long TIMEOUT_MS = 10_000;
     static final int CREATE = 0, CLIENT_OK = 1, SERVER_OK = 2, CONNECTED = 3;
     static final String OK = "OK";
 
@@ -111,7 +112,7 @@ public abstract class NIOComponent<AT> implements Closeable {
         while (!Thread.currentThread().isInterrupted() && (s = selector) != null) {
             SelectionKey key = null;
             try {
-                if (s.select(1000L) <= 0) {
+                if (s.select(TIMEOUT_MS) <= 0) {
                     continue;
                 }
                 Iterator<SelectionKey> iterator = s.selectedKeys().iterator();
