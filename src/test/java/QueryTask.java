@@ -15,7 +15,7 @@ public class QueryTask implements Callable<Void> {
 
     @Override
     public Void call() {
-        final int count = 5000;
+        final int count = 10000;
         long start = System.currentTimeMillis();
         for (int i = 0; i < count / 2; i++) {
             final String k1 = clientId + "k1-" + i, v1 = clientId + "v1-" + i;

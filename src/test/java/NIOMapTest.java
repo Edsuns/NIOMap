@@ -59,7 +59,7 @@ public class NIOMapTest {
         NIOMapServer nioMapServer = new NIOMapServer(address, encoder);
         nioMapServer.connect();
 
-        final int x = 3, y = 4, threads = x * y;
+        final int x = 3, y = 2, threads = x * y;
         ExecutorService executorService = Executors.newFixedThreadPool(threads);
 
         List<NIOMapClient> clients = new ArrayList<>(x);
@@ -75,9 +75,9 @@ public class NIOMapTest {
             }
         }
 
-        DecimalFormat df = new DecimalFormat(",###0.0000");
+        DecimalFormat df = new DecimalFormat(",###0.####");
         Function<Long, String> calcQPS = start ->
-                df.format(180_000d / ((System.currentTimeMillis() - start) / 1000d)) + " QPS";
+                df.format(18d / ((System.currentTimeMillis() - start) / 1000d)) + "w QPS";
         try {
             long start = System.currentTimeMillis();
             for (Future<Void> future : futures) {
@@ -89,7 +89,7 @@ public class NIOMapTest {
             }
             System.out.println("flush: " + calcQPS.apply(start));
             System.out.println("total: " + (System.currentTimeMillis() - start) + "ms");
-            assertEquals(x * 5000, nioMapServer.map.size());
+            assertEquals(x * 10000, nioMapServer.map.size());
         } catch (ExecutionException e) {
             if (e.getCause() instanceof AssertionError) {
                 throw (AssertionError) e.getCause();
