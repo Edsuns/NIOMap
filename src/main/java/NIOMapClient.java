@@ -3,10 +3,7 @@ import nio.NIOComponent;
 
 import java.io.IOException;
 import java.net.SocketAddress;
-import java.util.LinkedList;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Queue;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -21,7 +18,12 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
         volatile String returnVal;
 
         private Command(String... cmd) {
-            this.message = String.join(" ", cmd);
+            StringJoiner joiner = new StringJoiner(" ");
+            for (String c : cmd) {
+                if (c == null || "null".equals(c)) throw new IllegalArgumentException("null");
+                joiner.add(c);
+            }
+            this.message = joiner.toString();
         }
 
         void onReturn(String message) {
@@ -36,6 +38,8 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
                 String val = returnVal;
                 if (val == null) {
                     synchronized (Command.this) {
+                        val = returnVal;
+                        if (val != null) return val;
                         Command.this.wait(TIMEOUT_MS);
                         val = returnVal;
                         if (val == null) {
@@ -80,6 +84,7 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
     }
 
     public void awaitFlush(long timeout, TimeUnit unit) throws ExecutionException, InterruptedException {
+        if (cmdNeedReturn.decrementAndGet() <= 0 && commandQueue.isEmpty()) return;
         long limitMs = unit.toMillis(timeout);
         synchronized (cmdNeedReturn) {
             cmdNeedReturn.wait(limitMs);
