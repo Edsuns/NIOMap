@@ -36,6 +36,8 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
                 String val = returnVal;
                 if (val == null) {
                     synchronized (Command.this) {
+                        val = returnVal;
+                        if (val != null) return val;
                         Command.this.wait(TIMEOUT_MS);
                         val = returnVal;
                         if (val == null) {
@@ -80,6 +82,7 @@ public class NIOMapClient extends NIOComponent<Queue<NIOMapClient.Command>> {
     }
 
     public void awaitFlush(long timeout, TimeUnit unit) throws ExecutionException, InterruptedException {
+        if (cmdNeedReturn.decrementAndGet() <= 0 && commandQueue.isEmpty()) return;
         long limitMs = unit.toMillis(timeout);
         synchronized (cmdNeedReturn) {
             cmdNeedReturn.wait(limitMs);
