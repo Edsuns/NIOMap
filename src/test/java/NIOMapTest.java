@@ -1,4 +1,7 @@
 import nio.AESEncoder;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -18,13 +21,46 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class NIOMapTest {
 
+    static final int PORT = 3333;
+    static String REMOTE_HOST = "";
+    static String REMOTE_ENCODER = "";
+
+    static AESEncoder encoder;
+    static InetSocketAddress address;
+    static NIOMapServer nioMapServer;
+
+    @BeforeAll
+    static void beforeAll() throws NoSuchAlgorithmException, IOException {
+        encoder = REMOTE_ENCODER.isEmpty() ? AESEncoder.generateEncoder() : AESEncoder.parse(REMOTE_ENCODER);
+        address = new InetSocketAddress(REMOTE_HOST.isEmpty() ? "localhost" : REMOTE_HOST, PORT);
+        if (REMOTE_HOST.isEmpty()) {
+            nioMapServer = new NIOMapServer(new InetSocketAddress(PORT), encoder);
+            nioMapServer.connect();
+        }
+    }
+
+    @AfterAll
+    static void afterAll() throws IOException {
+        if (nioMapServer != null) {
+            nioMapServer.close();
+        }
+    }
+
+    @BeforeEach
+    void beforeEach() throws IOException, ExecutionException, InterruptedException {
+        if (nioMapServer != null) {
+            nioMapServer.map.clear();
+        } else {
+            NIOMapClient nioMapClient = new NIOMapClient(address, encoder);
+            nioMapClient.connect();
+            nioMapClient.clear().get();
+            nioMapClient.close();
+        }
+    }
+
     @Test
-    public void basic() throws IOException, ExecutionException, InterruptedException, NoSuchAlgorithmException {
-        AESEncoder encoder = AESEncoder.generateEncoder();
-        InetSocketAddress address = new InetSocketAddress(6636);
-        NIOMapServer nioMapServer = new NIOMapServer(address, encoder);
+    public void basic() throws IOException, ExecutionException, InterruptedException {
         NIOMapClient nioMapClient = new NIOMapClient(address, encoder);
-        nioMapServer.connect();
         nioMapClient.connect();
 
         final String k1 = "k1", v1 = "v1", v1_1 = "v1-1";
@@ -48,18 +84,11 @@ public class NIOMapTest {
         assertEquals("0", nioMapClient.size().get());
 
         nioMapClient.close();
-        nioMapServer.close();
     }
 
     @Test
-    public void concurrent() throws IOException, InterruptedException,
-            TimeoutException, ExecutionException, NoSuchAlgorithmException {
-        AESEncoder encoder = AESEncoder.generateEncoder();
-        InetSocketAddress address = new InetSocketAddress(6639);
-        NIOMapServer nioMapServer = new NIOMapServer(address, encoder);
-        nioMapServer.connect();
-
-        final int x = 3, y = 4, threads = x * y;
+    public void concurrent() throws IOException, InterruptedException, TimeoutException, ExecutionException {
+        final int x = 2, y = 3, threads = x * y;
         ExecutorService executorService = Executors.newFixedThreadPool(threads);
 
         List<NIOMapClient> clients = new ArrayList<>(x);
@@ -75,9 +104,9 @@ public class NIOMapTest {
             }
         }
 
-        DecimalFormat df = new DecimalFormat(",###0.0000");
+        DecimalFormat df = new DecimalFormat(",###0.####");
         Function<Long, String> calcQPS = start ->
-                df.format(180_000d / ((System.currentTimeMillis() - start) / 1000d)) + " QPS";
+                df.format(7.5d / ((System.currentTimeMillis() - start) / 1000d)) + "w QPS";
         try {
             long start = System.currentTimeMillis();
             for (Future<Void> future : futures) {
@@ -88,7 +117,7 @@ public class NIOMapTest {
                 client.awaitFlush(10_000L, TimeUnit.MILLISECONDS);
             }
             System.out.println("flush: " + calcQPS.apply(start));
-            assertEquals(x * 5000, nioMapServer.map.size());
+            assertEquals(x * 5000, Integer.parseInt(clients.get(0).size().get()));
         } catch (ExecutionException e) {
             if (e.getCause() instanceof AssertionError) {
                 throw (AssertionError) e.getCause();
@@ -99,7 +128,6 @@ public class NIOMapTest {
             for (NIOMapClient client : clients) {
                 client.close();
             }
-            nioMapServer.close();
             executorService.shutdownNow();
         }
     }
