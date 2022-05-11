@@ -5,7 +5,7 @@ package nio;
  */
 interface InputOutput {
 
-    int BUFFER_SIZE = 4096;
+    int BUFFER_SIZE = 1024 * 8;// 8 KB
 
     byte MESSAGE_DELIMITER = '\n';
 
