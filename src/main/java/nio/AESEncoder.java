@@ -20,6 +20,9 @@ public class AESEncoder {
     final SecretKey secretKey;
     final IvParameterSpec iv;
 
+    final Cipher encCipher;
+    final Cipher decCipher;
+
     /**
      * @param secretKey base64 encoded {@link SecretKey}
      * @param iv        base64 encoded {@link IvParameterSpec}
@@ -36,24 +39,25 @@ public class AESEncoder {
     public AESEncoder(SecretKey secretKey, IvParameterSpec iv) {
         this.secretKey = secretKey;
         this.iv = iv;
+
+        try {
+            encCipher = Cipher.getInstance(ALGORITHM);
+            encCipher.init(Cipher.ENCRYPT_MODE, secretKey, iv, SecureRandomHolder.INSTANCE);
+
+            decCipher = Cipher.getInstance(ALGORITHM);
+            decCipher.init(Cipher.DECRYPT_MODE, secretKey, iv, SecureRandomHolder.INSTANCE);
+        } catch (NoSuchAlgorithmException | NoSuchPaddingException
+                 | InvalidAlgorithmParameterException | InvalidKeyException e) {
+            throw new IllegalArgumentException(e);
+        }
     }
 
     public byte[] encrypt(byte[] plain) throws BadPaddingException, IllegalBlockSizeException, InvalidKeyException {
-        try {
-            return encrypt(ALGORITHM, plain, secretKey, iv);
-        } catch (NoSuchPaddingException | NoSuchAlgorithmException
-                | InvalidAlgorithmParameterException e) {
-            throw new RuntimeException(e);
-        }
+        return encCipher.doFinal(plain);
     }
 
     public byte[] decrypt(byte[] bytes) throws BadPaddingException, IllegalBlockSizeException, InvalidKeyException {
-        try {
-            return decrypt(ALGORITHM, bytes, secretKey, iv);
-        } catch (NoSuchPaddingException | NoSuchAlgorithmException
-                | InvalidAlgorithmParameterException e) {
-            throw new RuntimeException(e);
-        }
+        return decCipher.doFinal(bytes);
     }
 
     public String stringify() {
@@ -67,22 +71,6 @@ public class AESEncoder {
             throw new IllegalArgumentException();
         }
         return new AESEncoder(s[0], s[1]);
-    }
-
-    public static byte[] encrypt(String algorithm, byte[] plain, SecretKey key, IvParameterSpec iv)
-            throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidAlgorithmParameterException,
-            InvalidKeyException, BadPaddingException, IllegalBlockSizeException {
-        Cipher cipher = Cipher.getInstance(algorithm);
-        cipher.init(Cipher.ENCRYPT_MODE, key, iv);
-        return cipher.doFinal(plain);
-    }
-
-    public static byte[] decrypt(String algorithm, byte[] cipherText, SecretKey key, IvParameterSpec iv)
-            throws NoSuchPaddingException, NoSuchAlgorithmException, InvalidAlgorithmParameterException,
-            InvalidKeyException, BadPaddingException, IllegalBlockSizeException {
-        Cipher cipher = Cipher.getInstance(algorithm);
-        cipher.init(Cipher.DECRYPT_MODE, key, iv);
-        return cipher.doFinal(cipherText);
     }
 
     public static AESEncoder generateEncoder() throws NoSuchAlgorithmException {

@@ -106,7 +106,7 @@ public class NIOMapTest {
 
         DecimalFormat df = new DecimalFormat(",###0.####");
         Function<Long, String> calcQPS = start ->
-                df.format(7.5d / ((System.currentTimeMillis() - start) / 1000d)) + "w QPS";
+                df.format(1.25d * threads / ((System.currentTimeMillis() - start) / 1000d)) + "w QPS";
         try {
             long start = System.currentTimeMillis();
             for (Future<Void> future : futures) {

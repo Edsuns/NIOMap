@@ -56,7 +56,7 @@ public abstract class NIOComponent<AT> implements Closeable {
                            AESEncoder encoder, Supplier<AT> attachmentSupplier) {
         this.isServer = isServer;
         this.address = address;
-        this.encoder = encoder;
+        this.encoder = new AESEncoder(encoder.secretKey, encoder.iv);
         this.attachmentSupplier = attachmentSupplier;
     }
 
